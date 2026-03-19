@@ -1,7 +1,27 @@
-Here is a clean, professional **GitHub README section** with no emojis and written to scale as you add more datasets later.
+Trainable IDS Project
+This is a multi-file defensive IDS prototype that supports:
 
----
-
+training on labeled datasets
+runtime prediction on logs
+optional LLM explanations
+SQLite alert storage
+FastAPI alert endpoint
+Project structure
+llm_ids_project/
+├── app/
+├── data/
+├── models/
+├── requirements.txt
+├── train.py
+└── README.md
+Install
+pip install -r requirements.txt
+Train
+python train.py
+Run detector
+python -m app.main
+Run API
+uvicorn app.api:app --reload
 # Data Set Training — Credits and Sources
 
 ## Overview
