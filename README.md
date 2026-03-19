@@ -1,12 +1,20 @@
-Trainable IDS Project
-This is a multi-file defensive IDS prototype that supports:
+## Trainable IDS Project
 
-training on labeled datasets
-runtime prediction on logs
-optional LLM explanations
+This project is a multi-file defensive Intrusion Detection System (IDS) prototype designed for scalability and extensibility. It supports both machine learning–based detection and optional LLM-assisted analysis.
+
+## Features
+
+Training on labeled datasets
+
+Runtime prediction on incoming logs
+
+Optional LLM-based explanations
+
 SQLite alert storage
-FastAPI alert endpoint
-Project structure
+
+FastAPI-based alert endpoint
+
+## Project Structure
 llm_ids_project/
 ├── app/
 ├── data/
@@ -14,32 +22,30 @@ llm_ids_project/
 ├── requirements.txt
 ├── train.py
 └── README.md
-Install
-pip install -r requirements.txt
-Train
+Installation
+
+## Install required dependencies:
+
+pip install -r requirements.txtTrainin
+
+#Train the model using available datasets:
 python train.py
-Run detector
+
+## Run the IDS detection engine:
+
 python -m app.main
 Run API
+
+## Start the FastAPI server for alert access:
+
 uvicorn app.api:app --reload
-# Data Set Training — Credits and Sources
+Notes
 
-## Overview
+## The model must be trained before running the detector
 
-This project uses labeled network traffic datasets to train a machine learning–based intrusion detection system (IDS). The training pipeline is designed to support multiple datasets and formats, allowing for incremental expansion as additional sources are incorporated.
+Trained models are saved in the models/ directory
 
-Datasets are organized by attack scenario and typically include:
-
-```text
-<Attack Scenario>/
-├── *_dataset.csv      # extracted network features
-├── *_labels.csv       # ground truth labels
-└── *.pcap / *.pcapng  # raw packet capture (reference only)
-```
-
-During training, the system automatically pairs each dataset file with its corresponding label file and merges them to produce supervised training samples.
-
----
+The system is designed to support large datasets and multiple data sources
 
 ## Primary Dataset
 
