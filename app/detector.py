@@ -1,4 +1,5 @@
 import hashlib
+import os
 import joblib
 
 from app.schemas import LogEvent, DetectionResult
@@ -9,7 +10,15 @@ from app.config import MODEL_PATH, ALLOWLIST_IPS, ALLOWLIST_KEYWORDS, DEDUP_WIND
 
 class IDSDetector:
     def __init__(self) -> None:
-        self.model = joblib.load(MODEL_PATH)
+        if not os.path.exists(MODEL_PATH):
+            raise FileNotFoundError(
+                f"Model not found at {MODEL_PATH}. Run 'python train.py' first."
+            )
+
+        bundle = joblib.load(MODEL_PATH)
+        self.vectorizer = bundle["vectorizer"]
+        self.classifier = bundle["classifier"]
+        self.classes = bundle["classes"]
         self.recent_hashes: dict[str, float] = {}
 
     def is_allowlisted(self, event: LogEvent) -> bool:
@@ -45,9 +54,7 @@ class IDSDetector:
 
     def severity_from_label(self, label: str, confidence: float, flags: list[str]) -> str:
         if label == "malicious":
-            if confidence >= 0.85:
-                return "critical"
-            return "high"
+            return "critical" if confidence >= 0.85 else "high"
 
         if label == "suspicious":
             if "privilege_escalation" in flags or "remote_download" in flags:
@@ -67,10 +74,11 @@ class IDSDetector:
             deduplicated = False
         else:
             text = event_to_text(event)
-            probabilities = self.model.predict_proba([text])[0]
-            classes = self.model.classes_
+            X_vec = self.vectorizer.transform([text])
 
-            class_scores = dict(zip(classes, probabilities))
+            probabilities = self.classifier.predict_proba(X_vec)[0]
+            class_scores = dict(zip(self.classifier.classes_, probabilities))
+
             label = max(class_scores, key=class_scores.get)
             confidence = float(class_scores[label])
 
