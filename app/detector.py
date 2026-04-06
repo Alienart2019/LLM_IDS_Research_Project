@@ -59,6 +59,8 @@ class IDSDetector:
         if label == "suspicious":
             if "privilege_escalation" in flags or "remote_download" in flags:
                 return "high"
+            if "scan_like_tcp" in flags or "high_risk_port" in flags:
+                return "medium"
             return "medium"
 
         return "low"
