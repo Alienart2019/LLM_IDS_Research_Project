@@ -1,4 +1,5 @@
 import os
+import gc
 
 import joblib
 import pandas as pd
@@ -11,19 +12,19 @@ from sklearn.model_selection import train_test_split
 from app.config import MODEL_PATH
 from app.dataloader import (
     iter_training_sources,
-    load_single_csv_for_training,
-    load_dataset_and_labels
+    iter_csv_training_chunks,
+    iter_paired_csv_training_chunks
 )
 from app.features import row_to_text
 
 
-CHUNK_SIZE = 5000
+CHUNK_SIZE = 20000
 CLASSES = ["benign", "suspicious", "malicious"]
 
 
 def train_model(dataset_path: str) -> None:
     vectorizer = HashingVectorizer(
-        n_features=2**18,
+        n_features=2**20,
         alternate_sign=False,
         ngram_range=(1, 2),
         lowercase=True
@@ -45,21 +46,24 @@ def train_model(dataset_path: str) -> None:
                 dataset_file, labels_file = payload
                 print(f"Training from paired dataset: {dataset_file}")
                 print(f"Using labels file:            {labels_file}")
-                combined_df = load_dataset_and_labels(dataset_file, labels_file)
+                chunk_iter = iter_paired_csv_training_chunks(
+                    dataset_file,
+                    labels_file,
+                    CHUNK_SIZE
+                )
                 files_processed += 1
 
             elif source_type == "single_csv":
                 csv_file = payload
                 print(f"Training from single labeled CSV: {csv_file}")
-                combined_df = load_single_csv_for_training(csv_file)
+                chunk_iter = iter_csv_training_chunks(csv_file, CHUNK_SIZE)
                 files_processed += 1
 
             else:
                 continue
 
-            for start in range(0, len(combined_df), CHUNK_SIZE):
-                chunk = combined_df.iloc[start:start + CHUNK_SIZE].copy()
-
+            chunk_index = 0
+            for chunk in chunk_iter:
                 if chunk.empty:
                     continue
 
@@ -78,9 +82,19 @@ def train_model(dataset_path: str) -> None:
                 rows_processed += len(chunk)
 
                 if len(eval_frames) < 3:
-                    eval_frames.append(chunk)
+                    eval_frames.append(chunk.head(2000).copy())
 
-                print(f"  processed rows {start} to {start + len(chunk) - 1}")
+                print(
+                    f"  processed chunk {chunk_index} "
+                    f"({len(chunk)} rows, total rows={rows_processed})"
+                )
+
+                chunk_index += 1
+                del chunk
+                del X_text
+                del y
+                del X_vec
+                gc.collect()
 
         except Exception as e:
             print(f"Skipped source due to error: {e}")

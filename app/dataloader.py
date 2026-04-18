@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import time
 from pathlib import Path
 from typing import Iterable
@@ -68,13 +67,11 @@ def _find_column(df: pd.DataFrame, candidates: list[str]) -> str | None:
     return None
 
 
-def _safe_str(value, default: str = "unknown") -> str:
-    if pd.isna(value):
-        return default
-    return str(value).strip() if str(value).strip() else default
+def _safe_str_series(series: pd.Series, default: str = "unknown") -> pd.Series:
+    return series.fillna(default).astype(str).replace("", default)
 
 
-def dataframe_to_training_rows(df: pd.DataFrame) -> pd.DataFrame:
+def normalize_training_chunk(df: pd.DataFrame) -> pd.DataFrame:
     label_col = _find_column(df, LABEL_CANDIDATES)
     if label_col is None:
         raise ValueError(
@@ -91,61 +88,72 @@ def dataframe_to_training_rows(df: pd.DataFrame) -> pd.DataFrame:
     working["label"] = working[label_col].apply(_normalize_label)
     working = working.dropna(subset=["label"])
 
+    if working.empty:
+        return pd.DataFrame(columns=["text", "label", "source_ip", "hostname", "service"])
+
     if text_col:
         working["text"] = working[text_col].astype(str)
     else:
-        parts = []
-        for _, row in working.iterrows():
-            row_parts = []
-            for col, value in row.items():
-                if col == label_col:
-                    continue
-                row_parts.append(f"{col}={value}")
-            parts.append(" ".join(row_parts))
-        working["text"] = parts
+        feature_cols = [c for c in working.columns if c != label_col]
+        working["text"] = working[feature_cols].astype(str).agg(
+            lambda row: " ".join(f"{col}={row[col]}" for col in feature_cols),
+            axis=1
+        )
 
-    working["source_ip"] = (
-        working[source_ip_col].apply(_safe_str) if source_ip_col else "unknown"
-    )
-    working["hostname"] = (
-        working[host_col].apply(_safe_str) if host_col else "unknown"
-    )
-    working["service"] = (
-        working[service_col].apply(_safe_str) if service_col else "unknown"
-    )
+    if source_ip_col:
+        working["source_ip"] = _safe_str_series(working[source_ip_col])
+    else:
+        working["source_ip"] = "unknown"
+
+    if host_col:
+        working["hostname"] = _safe_str_series(working[host_col])
+    else:
+        working["hostname"] = "unknown"
+
+    if service_col:
+        working["service"] = _safe_str_series(working[service_col])
+    else:
+        working["service"] = "unknown"
 
     return working[["text", "label", "source_ip", "hostname", "service"]]
 
 
-def load_single_csv_for_training(csv_path: Path) -> pd.DataFrame:
-    df = pd.read_csv(csv_path)
-    return dataframe_to_training_rows(df)
+def iter_csv_training_chunks(csv_path: Path, chunk_size: int) -> Iterable[pd.DataFrame]:
+    for chunk in pd.read_csv(csv_path, chunksize=chunk_size, low_memory=False):
+        yield normalize_training_chunk(chunk)
 
 
-def load_dataset_and_labels(dataset_file: Path, labels_file: Path) -> pd.DataFrame:
-    dataset_df = pd.read_csv(dataset_file)
-    labels_df = pd.read_csv(labels_file)
+def iter_paired_csv_training_chunks(
+    dataset_file: Path,
+    labels_file: Path,
+    chunk_size: int
+) -> Iterable[pd.DataFrame]:
+    dataset_iter = pd.read_csv(dataset_file, chunksize=chunk_size, low_memory=False)
+    labels_iter = pd.read_csv(labels_file, chunksize=chunk_size, low_memory=False)
 
-    if len(dataset_df) != len(labels_df):
-        raise ValueError(
-            f"Row count mismatch: {dataset_file.name} has {len(dataset_df)} rows, "
-            f"but {labels_file.name} has {len(labels_df)} rows."
-        )
+    for dataset_chunk, labels_chunk in zip(dataset_iter, labels_iter):
+        label_col = _find_column(labels_chunk, LABEL_CANDIDATES)
+        if label_col is None:
+            if len(labels_chunk.columns) == 1:
+                label_col = labels_chunk.columns[0]
+            else:
+                raise ValueError(
+                    f"Could not determine label column from labels file: {list(labels_chunk.columns)}"
+                )
 
-    label_col = _find_column(labels_df, LABEL_CANDIDATES)
-    if label_col is None:
-        if len(labels_df.columns) == 1:
-            label_col = labels_df.columns[0]
-        else:
+        if len(dataset_chunk) != len(labels_chunk):
             raise ValueError(
-                f"Could not determine label column from labels file: {list(labels_df.columns)}"
+                f"Chunk row count mismatch between {dataset_file.name} and {labels_file.name}"
             )
 
-    combined = dataset_df.copy()
-    combined["label"] = labels_df[label_col].apply(_normalize_label)
-    combined = combined.dropna(subset=["label"])
+        combined = dataset_chunk.copy()
+        combined["label"] = labels_chunk[label_col].apply(_normalize_label)
+        combined = combined.dropna(subset=["label"])
 
-    return dataframe_to_training_rows(combined)
+        if combined.empty:
+            continue
+
+        yield normalize_training_chunk(combined)
 
 
 def packet_to_event(packet) -> LogEvent | None:
@@ -168,27 +176,13 @@ def packet_to_event(packet) -> LogEvent | None:
 
     if TCP in packet:
         service = "tcp"
-        sport = packet[TCP].sport
-        dport = packet[TCP].dport
-        flags = packet[TCP].flags
-        parts.append(f"src_port={sport}")
-        parts.append(f"dst_port={dport}")
-        parts.append(f"tcp_flags={flags}")
-
-        suspicious_ports = {21, 22, 23, 25, 53, 80, 110, 139, 143, 443, 445, 3389}
-        if int(dport) in suspicious_ports:
-            parts.append(f"service_hint_port={dport}")
-
-        if str(flags) in {"S", "F", "R"}:
-            parts.append("suspicious_tcp_pattern=true")
-
+        parts.append(f"src_port={packet[TCP].sport}")
+        parts.append(f"dst_port={packet[TCP].dport}")
+        parts.append(f"tcp_flags={packet[TCP].flags}")
     elif UDP in packet:
         service = "udp"
-        sport = packet[UDP].sport
-        dport = packet[UDP].dport
-        parts.append(f"src_port={sport}")
-        parts.append(f"dst_port={dport}")
-
+        parts.append(f"src_port={packet[UDP].sport}")
+        parts.append(f"dst_port={packet[UDP].dport}")
     elif ICMP in packet:
         service = "icmp"
         parts.append("icmp=true")
@@ -204,14 +198,12 @@ def packet_to_event(packet) -> LogEvent | None:
     if not parts:
         return None
 
-    message = " ".join(parts)
-
     return LogEvent(
         timestamp=timestamp,
         source_ip=source_ip,
         hostname=hostname,
         service=service,
-        message=message
+        message=" ".join(parts)
     )
 
 
@@ -249,7 +241,7 @@ def load_text_log_events(log_path: Path) -> list[LogEvent]:
     return events
 
 
-def iter_training_sources(root_path: str) -> Iterable[tuple[str, object]]:
+def iter_training_sources(root_path: str):
     root = Path(root_path)
 
     if not root.exists():

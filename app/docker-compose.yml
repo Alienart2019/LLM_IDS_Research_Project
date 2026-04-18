@@ -1,0 +1,67 @@
+version: "3.9"
+
+services:
+
+  # ── IDS API ──────────────────────────────────────────────────────────────
+  ids:
+    build: .
+    container_name: ids_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data:ro           # training datasets (read-only)
+      - ./models:/app/models          # trained model persistence
+      - ids_db:/app/db                # SQLite alert store
+    environment:
+      IDS_DB_PATH: /app/db/alerts.db
+      IDS_MODEL_PATH: /app/models/ids_model.pkl
+      IDS_API_KEY: "${IDS_API_KEY:-}"          # set in .env for production
+      IDS_HONEYPOT_ENABLED: "${IDS_HONEYPOT_ENABLED:-false}"
+      IDS_HONEYPOT_HOST: honeypot
+      IDS_HONEYPOT_PORT: "8080"
+      IDS_HONEYPOT_LABELS: "malicious"
+      IDS_LOG_JSON: "true"
+      IDS_LOG_LEVEL: "INFO"
+    depends_on:
+      - honeypot
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Honeypot ─────────────────────────────────────────────────────────────
+  # Replace this image with your actual honeypot (e.g. opencanary, cowrie,
+  # or your own service). The IDS just needs it to accept POST /incoming.
+  honeypot:
+    image: python:3.12-slim
+    container_name: ids_honeypot
+    restart: unless-stopped
+    # Minimal stub server — replace with your real honeypot image
+    command: >
+      python -c "
+      from http.server import BaseHTTPRequestHandler, HTTPServer
+      import json, logging
+      logging.basicConfig(level=logging.INFO, format='%(asctime)s [HONEYPOT] %(message)s')
+      class H(BaseHTTPRequestHandler):
+          def do_POST(self):
+              length = int(self.headers.get('Content-Length', 0))
+              body = self.rfile.read(length)
+              try:
+                  data = json.loads(body)
+                  logging.info('Received: ip=%s label=%s severity=%s',
+                      data.get('source_ip'), data.get('predicted_label'), data.get('severity'))
+              except Exception:
+                  pass
+              self.send_response(200)
+              self.end_headers()
+              self.wfile.write(b'{\"ok\":true}')
+          def log_message(self, *a): pass
+      HTTPServer(('0.0.0.0', 8080), H).serve_forever()
+      "
+    expose:
+      - "8080"
+
+volumes:
+  ids_db:
