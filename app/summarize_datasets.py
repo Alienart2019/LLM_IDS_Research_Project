@@ -23,7 +23,7 @@ import json
 import sys
 from pathlib import Path
 
-from Documentation.dataset_summary import summarize_datasets
+from app.dataset_summary import summarize_datasets
 from app.logging_config import setup_logging
 
 

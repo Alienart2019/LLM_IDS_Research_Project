@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+venv/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDS artifacts (regeneratable)
+models/*.pkl
+alerts.db
+*.log
+ollama.log
+docs/DATASETS.md
+catalog.json
+
+# Large datasets (GitHub 100 MB file limit)
+data/archive/
+data/*.pcap
+data/*.pcapng
+
+# Keep small samples
+!data/sample_logs.csv
+!data/cybersecurity_intrusion_data.csv
+
+# Secrets
+.env
+*.key
