@@ -3,6 +3,7 @@ import os
 # --- Paths ---
 DB_PATH = os.getenv("IDS_DB_PATH", "alerts.db")
 MODEL_PATH = os.getenv("IDS_MODEL_PATH", "models/ids_model.pkl")
+HYBRID_MODEL_PATH = os.getenv("IDS_HYBRID_MODEL_PATH", "models/ids_hybrid_model.pkl")
 
 # --- LLM ---
 USE_LLM = os.getenv("IDS_USE_LLM", "false").lower() == "true"
@@ -31,7 +32,6 @@ HONEYPOT_URL = os.getenv(
     "IDS_HONEYPOT_URL",
     f"http://{HONEYPOT_HOST}:{HONEYPOT_PORT}/incoming"
 )
-# Labels that trigger honeypot routing (comma-separated)
 _honeypot_labels_raw = os.getenv("IDS_HONEYPOT_LABELS", "malicious")
 HONEYPOT_TRIGGER_LABELS: set[str] = set(
     lbl.strip() for lbl in _honeypot_labels_raw.split(",") if lbl.strip()
@@ -39,9 +39,35 @@ HONEYPOT_TRIGGER_LABELS: set[str] = set(
 HONEYPOT_FORWARD_TIMEOUT = float(os.getenv("IDS_HONEYPOT_FORWARD_TIMEOUT", "5.0"))
 
 # --- API security ---
-API_KEY = os.getenv("IDS_API_KEY", "")          # empty = auth disabled (dev only)
-API_RATE_LIMIT = int(os.getenv("IDS_API_RATE_LIMIT", "200"))   # requests / minute
+API_KEY = os.getenv("IDS_API_KEY", "")
+API_RATE_LIMIT = int(os.getenv("IDS_API_RATE_LIMIT", "200"))
 
 # --- Logging ---
 LOG_LEVEL = os.getenv("IDS_LOG_LEVEL", "INFO").upper()
 LOG_JSON = os.getenv("IDS_LOG_JSON", "false").lower() == "true"
+
+# --- Hybrid model ---
+# Set IDS_USE_HYBRID=true to use the 2-stage K-means + DT detector alongside
+# (or instead of) the primary SGD model.
+USE_HYBRID_DETECTOR = os.getenv("IDS_USE_HYBRID", "false").lower() == "true"
+
+# --- SMOTE ---
+# Set IDS_USE_SMOTE=true during training (train_hybrid.py --smote) to enable
+# Synthetic Minority Over-sampling.  Has no effect at inference time.
+USE_SMOTE = os.getenv("IDS_USE_SMOTE", "false").lower() == "true"
+
+# --- IoT-specific rules ---
+# Enables the stateful IoT rule engine (wormhole, black-hole, DoS flood).
+IOT_RULES_ENABLED = os.getenv("IDS_IOT_RULES", "false").lower() == "true"
+
+# DoS flood threshold (packets/second per source IP).
+IOT_DOS_RATE_THRESHOLD = int(os.getenv("IDS_IOT_DOS_RATE", "100"))
+
+# Black-hole AMoF deviation threshold (sigma).
+IOT_BLACKHOLE_SIGMA = float(os.getenv("IDS_IOT_BLACKHOLE_SIGMA", "3.0"))
+
+# --- Deployment tier ---
+# "edge"  — lightweight models only (XGBoost/RandomForest or the DT from the
+#            hybrid, targeting sub-2 MB on-disk size).
+# "cloud" — full pipeline including hybrid deep models (default).
+DEPLOYMENT_TIER = os.getenv("IDS_DEPLOYMENT_TIER", "cloud").lower()
